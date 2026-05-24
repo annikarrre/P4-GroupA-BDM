@@ -1,0 +1,11 @@
+apache-airflow
+psycopg[binary]
+pgvector
+boto3
+datasets
+pillow
+numpy
+torch
+open-clip-torch
+sentence-transformers
+requests

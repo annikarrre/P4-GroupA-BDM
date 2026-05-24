@@ -2,7 +2,7 @@ import os
 
 POSTGRES_DSN = os.getenv(
     "POSTGRES_DSN",
-    "postgresql://postgres:postgres@localhost:5432/postgres",
+    "postgresql://rico:rico@localhost:5432/rico",
 )
 
 MINIO_URL = os.getenv("MINIO_URL", "http://localhost:9000")
@@ -15,7 +15,10 @@ LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5:3b")
 
 CLIP_ARCH = "ViT-B-32"
 CLIP_PRETRAINED = "laion2b_s34b_b79k"
-CLIP_MODEL_VERSION = f"open-clip-{CLIP_ARCH}-{CLIP_PRETRAINED}"
+
+CLIP_MODEL_VERSION = (
+    f"open-clip-{CLIP_ARCH}-{CLIP_PRETRAINED.replace('_', '-')}"
+)
 
 SBERT_MODEL_VERSION = "sentence-transformers/all-MiniLM-L6-v2"
 
