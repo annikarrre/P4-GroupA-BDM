@@ -12,7 +12,53 @@ from src.ingest import ingest_screens
 from src.metrics import collect_metrics
 from src.runs import create_pipeline_run, finish_pipeline_run
 from src.slack import post_slack_message
+from src.metrics import collect_metrics, save_metric
+import time
+import logging
 
+logger = logging.getLogger(__name__)
+
+def mark_pipeline_failed(context):
+    """
+    Airflow task failure callback.
+
+    If any task fails after init_run, mark the pipeline run as failed
+    and send a best-effort Slack notification.
+    """
+    ti = context.get("ti")
+    task_instance = context.get("task_instance")
+    exception = context.get("exception")
+
+    task_id = task_instance.task_id if task_instance else "unknown"
+
+    # audit_task handles paused-by-audit itself
+    if task_id == "audit_task":
+        return
+
+    run_info = None
+    if ti:
+        run_info = ti.xcom_pull(task_ids="init_run")
+
+    if not run_info or "run_id" not in run_info:
+        logger.warning("Could not mark pipeline failed: run_id unavailable")
+        return
+
+    run_id = run_info["run_id"]
+
+    try:
+        finish_pipeline_run(run_id, "failed")
+    except Exception:
+        logger.exception("Failed to update pipeline_runs for failed run")
+
+    try:
+        post_slack_message(
+            "RICO pipeline failed\n"
+            f"run_id={run_id}\n"
+            f"task={task_id}\n"
+            f"error={exception}"
+        )
+    except Exception:
+        logger.exception("Failed to post Slack failure notification")
 
 @dag(
     dag_id="rico_multimodal_pipeline",
@@ -20,6 +66,9 @@ from src.slack import post_slack_message
     schedule=None,
     catchup=False,
     tags=["rico", "multimodal", "homework"],
+    default_args={
+        "on_failure_callback": mark_pipeline_failed,
+    },
 )
 def rico_multimodal_pipeline():
     start = EmptyOperator(task_id="start")
@@ -52,13 +101,20 @@ def rico_multimodal_pipeline():
 
     @task
     def parse_task(run_info: dict):
-        # Parsing is currently used inside embed_text and extract.
-        # This task exists because the homework requires parse as a visible DAG node.
-        return {
+        start = time.perf_counter()
+        result = {
             "stage": "parse",
             "rows_in": run_info["limit"],
             "rows_out": run_info["limit"],
         }
+        save_metric(
+            run_info["run_id"],
+            "task_duration_seconds.parse",
+            round(time.perf_counter() - start, 3),
+        )
+        save_metric(run_info["run_id"], "task_rows_in.parse", run_info["limit"])
+        save_metric(run_info["run_id"], "task_rows_out.parse", run_info["limit"])
+        return result
 
     @task
     def embed_image_task(run_info: dict):
@@ -83,13 +139,18 @@ def rico_multimodal_pipeline():
 
     @task
     def load_task(run_info: dict):
-        # In this implementation, stages write directly to destination tables.
-        # This task is kept as a visible production boundary required by the homework.
-        return {
+        start = time.perf_counter()
+        result = {
             "stage": "load",
             "status": "completed_by_upserts",
             "run_id": run_info["run_id"],
         }
+        save_metric(
+            run_info["run_id"],
+            "task_duration_seconds.load",
+            round(time.perf_counter() - start, 3),
+        )
+        return result
 
     @task
     def audit_task(run_info: dict):
@@ -107,14 +168,10 @@ def rico_multimodal_pipeline():
         return run_eval(run_info["run_id"])
 
     @task
-    def metrics_task(run_info: dict):
-        return collect_metrics(run_info["run_id"])
-
-    @task
     def finish_task(run_info: dict):
-        metrics = collect_metrics(run_info["run_id"])
-
         finish_pipeline_run(run_info["run_id"], "succeeded")
+
+        metrics = collect_metrics(run_info["run_id"])
 
         post_slack_message(
             "RICO pipeline finished\n"

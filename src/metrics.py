@@ -42,6 +42,28 @@ def collect_metrics(run_id: str) -> dict:
             cur.execute(
                 """
                 SELECT
+                    EXTRACT(EPOCH FROM (COALESCE(ended_at, NOW()) - started_at))
+                FROM pipeline_runs
+                WHERE run_id = %s
+                """,
+                (run_id,),
+            )
+            metrics["total_run_duration_seconds"] = round(float(cur.fetchone()[0]), 3)
+
+
+            cur.execute(
+                """
+                SELECT status
+                FROM pipeline_runs
+                WHERE run_id = %s
+                """,
+                (run_id,),
+            )
+            metrics["final_run_status"] = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                SELECT
                     COALESCE(
                         AVG(
                             CASE

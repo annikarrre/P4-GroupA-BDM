@@ -13,6 +13,7 @@ from src.config import (
 )
 from src.db import get_conn
 from src.utils import sha256_bytes, sha256_text
+from src.timing import timed_stage
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,8 @@ def ensure_bucket_exists(s3) -> None:
     if MINIO_BUCKET not in existing:
         s3.create_bucket(Bucket=MINIO_BUCKET)
 
-from src.timing import timed_stage
 
-@timed_stage("ingest_screens")
+@timed_stage("ingest")
 def ingest_screens(run_id: str, limit: int) -> dict:
     """
     Stream RICO rows, upload PNG + hierarchy JSON to MinIO,

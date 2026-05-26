@@ -6,7 +6,7 @@ from src.timing import timed_stage
 
 logger = logging.getLogger(__name__)
 
-@timed_stage("ingest")
+@timed_stage("eval")
 def run_eval(run_id: str) -> dict:
     """
     For now, we store whether the run has both image and text embeddings.

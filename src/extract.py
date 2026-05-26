@@ -68,7 +68,7 @@ def extract_one(text_rep: str) -> dict:
     raw = response.json()["response"]
     return json.loads(raw)
 
-@timed_stage("ingest")
+@timed_stage("extract")
 def extract_structured_data(run_id: str, limit: int) -> dict:
     logger.info("run_id=%s stage=extract status=started", run_id)
 

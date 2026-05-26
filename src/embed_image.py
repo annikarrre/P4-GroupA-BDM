@@ -19,6 +19,7 @@ from src.config import (
 )
 from src.db import get_conn
 from src.utils import sha256_bytes
+from src.timing import timed_stage
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +32,8 @@ def get_s3_client():
         aws_secret_access_key=MINIO_SECRET,
     )
 
-from src.timing import timed_stage
-@timed_stage("ingest")
+
+@timed_stage("embed_image")
 def embed_images(run_id: str, limit: int) -> dict:
     logger.info("run_id=%s stage=embed_image status=started", run_id)
 

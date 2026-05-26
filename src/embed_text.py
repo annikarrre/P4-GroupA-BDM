@@ -28,7 +28,7 @@ def get_s3_client():
     )
 
 
-@timed_stage("ingest")
+@timed_stage("embed_text")
 def embed_text(run_id: str, limit: int) -> dict:
     logger.info("run_id=%s stage=embed_text status=started", run_id)
 

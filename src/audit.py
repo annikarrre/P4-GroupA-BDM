@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class AuditFailedError(Exception):
     pass
 
-@timed_stage("ingest")
+@timed_stage("audit")
 def run_duplicate_audit(run_id: str) -> dict:
     logger.info("run_id=%s stage=audit status=started", run_id)
 
