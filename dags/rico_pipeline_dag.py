@@ -2,7 +2,8 @@ from datetime import datetime
 
 from airflow.decorators import dag, task
 from airflow.operators.empty import EmptyOperator
-
+from airflow.models.param import Param
+from airflow.operators.python import get_current_context
 from src.audit import run_duplicate_audit
 from src.embed_image import embed_images
 from src.embed_text import embed_text
@@ -66,6 +67,14 @@ def mark_pipeline_failed(context):
     schedule=None,
     catchup=False,
     tags=["rico", "multimodal", "homework"],
+    params={
+        "LIMIT": Param(
+            5,
+            type="integer",
+            minimum=1,
+            description="Number of RICO screens to process",
+        )
+    },
     default_args={
         "on_failure_callback": mark_pipeline_failed,
     },
@@ -74,23 +83,23 @@ def rico_multimodal_pipeline():
     start = EmptyOperator(task_id="start")
 
     @task
-    def init_run(**context):
-        conf = context["dag_run"].conf or {}
-        limit = int(conf.get("LIMIT", 5))
+    def init_run():
+        context = get_current_context()
+        limit = int(context["params"].get("LIMIT", 5))
 
-        run_id = create_pipeline_run(
+        run_info = create_pipeline_run(
             dag_run_id=context["dag_run"].run_id,
             limit_param=limit,
         )
 
         post_slack_message(
-            f"RICO pipeline started\nrun_id={run_id}\nLIMIT={limit}\ntrigger={context['dag_run'].run_type}"
+            "RICO pipeline started\n"
+            f"run_id={run_info['run_id']}\n"
+            f"limit={run_info['limit']}\n"
+            "trigger=manual_or_scheduled"
         )
 
-        return {
-            "run_id": run_id,
-            "limit": limit,
-        }
+        return run_info
 
     @task
     def ingest_task(run_info: dict):
@@ -173,11 +182,13 @@ def rico_multimodal_pipeline():
 
         metrics = collect_metrics(run_info["run_id"])
 
+        duration = metrics.get("total_run_duration_seconds", "unknown")
+
         post_slack_message(
             "RICO pipeline finished\n"
             f"run_id={run_info['run_id']}\n"
             "status=succeeded\n"
-            f"summary={metrics['summary']}"
+            f"duration={duration}s"
         )
 
         return metrics

@@ -16,6 +16,7 @@ x-airflow-common: &airflow-common
     OLLAMA_URL: http://ollama:11434
     LLM_MODEL: qwen2.5:3b
     PYTHONPATH: /opt/airflow/project
+    SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./src:/opt/airflow/project/src

@@ -2,6 +2,8 @@ import json
 import logging
 
 from src.db import get_conn
+from src.runs import finish_pipeline_run
+from src.slack import post_slack_message
 from src.timing import timed_stage
 
 logger = logging.getLogger(__name__)
@@ -10,12 +12,15 @@ logger = logging.getLogger(__name__)
 class AuditFailedError(Exception):
     pass
 
+
 @timed_stage("audit")
 def run_duplicate_audit(run_id: str) -> dict:
     logger.info("run_id=%s stage=audit status=started", run_id)
 
     with get_conn() as conn:
         with conn.cursor() as cur:
+
+            # metadata duplicates for current run
             cur.execute(
                 """
                 SELECT screen_id, COUNT(*) AS count
@@ -28,6 +33,7 @@ def run_duplicate_audit(run_id: str) -> dict:
             )
             metadata_duplicates = cur.fetchall()
 
+            # embedding duplicates for current run
             cur.execute(
                 """
                 SELECT
@@ -37,19 +43,24 @@ def run_duplicate_audit(run_id: str) -> dict:
                     embedding_kind,
                     COUNT(*) AS count
                 FROM screens_embeddings
+                WHERE run_id = %s
                 GROUP BY
                     screen_id,
                     model_name,
                     model_version,
                     embedding_kind
                 HAVING COUNT(*) > 1
-                """
+                """,
+                (run_id,),
             )
             embedding_duplicates = cur.fetchall()
 
             details = {
                 "metadata_duplicates": [
-                    {"screen_id": row[0], "count": row[1]}
+                    {
+                        "screen_id": row[0],
+                        "count": row[1],
+                    }
                     for row in metadata_duplicates
                 ],
                 "embedding_duplicates": [
@@ -95,11 +106,33 @@ def run_duplicate_audit(run_id: str) -> dict:
             run_id,
             json.dumps(details),
         )
+
+        try:
+            finish_pipeline_run(run_id, "paused-by-audit")
+        except Exception:
+            logger.exception(
+                "Failed to mark run as paused-by-audit"
+            )
+
+        try:
+            post_slack_message(
+                "RICO pipeline audit failed\n"
+                f"run_id={run_id}\n"
+                f"duplicate_keys={json.dumps(details, indent=2)}"
+            )
+        except Exception:
+            logger.exception(
+                "Failed to send audit Slack notification"
+            )
+
         raise AuditFailedError(
             f"Duplicate audit failed for run_id={run_id}: {details}"
         )
 
-    logger.info("run_id=%s stage=audit status=passed", run_id)
+    logger.info(
+        "run_id=%s stage=audit status=passed",
+        run_id,
+    )
 
     return {
         "stage": "audit",
