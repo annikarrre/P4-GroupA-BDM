@@ -436,8 +436,6 @@ ORDER BY metric_name;
 
 ## Project Structure
 
-## Project Structure
-
 ```text
 .
 ├── dags/
