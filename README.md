@@ -435,6 +435,9 @@ ORDER BY metric_name;
 ```
 
 ## Project Structure
+
+## Project Structure
+
 ```text
 .
 ├── dags/
@@ -473,40 +476,347 @@ ORDER BY metric_name;
 ├── notebook.ipynb
 ├── README.md
 ├── requirements.txt
+└── test_ingest.py
 ```
 
-### Main Components
+## File Descriptions
 
-- `dags/`
-  - Airflow DAG orchestration only.
-  - No business logic is implemented inside the DAG file.
+### dags/
 
-- `src/`
-  - Contains all pipeline logic and helper modules.
+Contains the Airflow DAG definition.
 
-- `audit.py`
-  - Runs duplicate-detection audit checks.
+#### `rico_pipeline_dag.py`
 
-- `embed_image.py`
-  - Generates CLIP image embeddings.
+Defines the orchestration logic for the full multimodal pipeline.
 
-- `embed_text.py`
-  - Generates SBERT text embeddings.
+Responsibilities:
+- task dependencies,
+- task ordering,
+- runtime configuration,
+- DAG parameters,
+- pipeline lifecycle handling.
 
-- `extract.py`
-  - Calls the local LLM to extract structured metadata.
+The DAG coordinates:
+- ingestion,
+- parsing,
+- embedding generation,
+- metadata extraction,
+- loading,
+- auditing,
+- evaluation,
+- finalization.
 
-- `metrics.py`
-  - Collects and stores observability metrics.
+---
 
-- `runs.py`
-  - Manages `pipeline_runs` lifecycle.
+### migrations/
 
-- `slack.py`
-  - Sends Slack notifications.
+Contains PostgreSQL schema initialization scripts.
 
-- `migrations/`
-  - Automatically initializes PostgreSQL schema during container startup.
+#### `001_schema.sql`
+
+Creates all required database tables and indexes, including:
+- `pipeline_runs`,
+- `screens_metadata`,
+- `screens_embeddings`,
+- `screens_review_queue`,
+- `pipeline_metrics`,
+- `audit_results`.
+
+Also initializes the `pgvector` extension.
+
+---
+
+### screenshots/
+
+Contains screenshots used in the README documentation.
+
+Examples:
+- DAG graph view,
+- successful DAG runs,
+- Slack notifications,
+- metrics queries,
+- audit results.
+
+---
+
+### src/
+
+Contains the pipeline business logic and helper modules.
+
+---
+
+#### `audit.py`
+
+Implements duplicate-detection audit checks.
+
+Responsibilities:
+- validates uniqueness constraints,
+- detects duplicate embeddings,
+- stores audit results,
+- raises failures when duplicate rows are found.
+
+---
+
+#### `config.py`
+
+Stores shared configuration values and environment variable handling.
+
+Responsibilities:
+- model configuration,
+- service URLs,
+- environment settings,
+- reusable constants.
+
+---
+
+#### `db.py`
+
+Provides PostgreSQL database connection utilities.
+
+Responsibilities:
+- database connection management,
+- transaction handling,
+- reusable connection helpers.
+
+---
+
+#### `embed_image.py`
+
+Generates image embeddings.
+
+Responsibilities:
+- loads CLIP model,
+- creates image vector embeddings,
+- stores embedding metadata.
+
+Model used:
+
+```text
+open-clip-ViT-B-32-laion2b-s34b-b79k
+```
+
+---
+
+#### `embed_text.py`
+
+Generates text embeddings.
+
+Responsibilities:
+- loads SentenceTransformer model,
+- creates text embeddings,
+- stores embedding metadata.
+
+Model used:
+
+```text
+sentence-transformers/all-MiniLM-L6-v2
+```
+
+---
+
+#### `eval.py`
+
+Implements evaluation and coverage metrics.
+
+Responsibilities:
+- validates paired embedding coverage,
+- computes evaluation metrics,
+- stores evaluation metrics into `pipeline_metrics`.
+
+---
+
+#### `extract.py`
+
+Extracts structured metadata using a local LLM.
+
+Responsibilities:
+- calls the Ollama-hosted LLM,
+- extracts structured metadata,
+- calculates confidence scores,
+- prepares review queue routing.
+
+Model used:
+
+```text
+qwen2.5:3b
+```
+
+---
+
+#### `ingest.py`
+
+Handles raw dataset ingestion.
+
+Responsibilities:
+- loads RICO input data,
+- uploads raw artifacts to MinIO,
+- generates deterministic object paths,
+- creates source fingerprints.
+
+---
+
+#### `metrics.py`
+
+Collects and stores observability metrics.
+
+Responsibilities:
+- task durations,
+- run durations,
+- embedding quality metrics,
+- metadata quality metrics,
+- evaluation metrics,
+- final pipeline status.
+
+Metrics are persisted in:
+
+```text
+pipeline_metrics
+```
+
+---
+
+#### `parse.py`
+
+Parses raw screen data into structured records.
+
+Responsibilities:
+- parses hierarchy metadata,
+- extracts structured fields,
+- prepares rows for embedding and extraction tasks.
+
+---
+
+#### `runs.py`
+
+Manages pipeline lifecycle state.
+
+Responsibilities:
+- creates pipeline runs,
+- updates pipeline status,
+- stores run metadata,
+- finalizes completed runs.
+
+Data is persisted in:
+
+```text
+pipeline_runs
+```
+
+---
+
+#### `slack.py`
+
+Handles Slack notifications.
+
+Responsibilities:
+- pipeline start notifications,
+- audit failure notifications,
+- pipeline completion notifications.
+
+---
+
+#### `timing.py`
+
+Provides reusable task timing decorators and duration tracking utilities.
+
+Responsibilities:
+- measuring task durations,
+- recording stage timings,
+- supporting observability metrics.
+
+---
+
+#### `utils.py`
+
+Contains shared helper functions used across the project.
+
+Responsibilities:
+- reusable utility logic,
+- helper formatting functions,
+- shared pipeline helpers.
+
+---
+
+### Root Files
+
+#### `.gitignore`
+
+Defines files and directories excluded from git tracking.
+
+Examples:
+- `.env`
+- `__pycache__/`
+- `.venv/`
+
+---
+
+#### `docker-compose.yml`
+
+Defines the local infrastructure stack.
+
+Services:
+- Postgres + pgvector,
+- Airflow,
+- MinIO,
+- Ollama.
+
+---
+
+#### `Makefile`
+
+Provides shortcut commands for local development.
+
+Examples:
+- `make up`
+- `make down`
+- `make clean`
+- `make db`
+
+---
+
+#### `notebook.ipynb`
+
+Original lab notebook used as the conceptual starting point for the project.
+
+The Airflow pipeline converts the notebook workflow into a production-style orchestration pipeline.
+
+---
+
+#### `README.md`
+
+Project documentation.
+
+Contains:
+- setup instructions,
+- DAG overview,
+- architecture explanation,
+- verification queries,
+- screenshots,
+- audit testing steps,
+- observability documentation.
+
+---
+
+#### `requirements.txt`
+
+Python dependency definitions for the project.
+
+Includes:
+- Airflow,
+- pgvector,
+- sentence-transformers,
+- open-clip,
+- psycopg2,
+- MinIO client libraries,
+- Ollama dependencies.
+
+---
+
+#### `test_ingest.py`
+
+Local ingestion testing script.
+
+Used for validating ingestion logic independently from the Airflow DAG.
 
 ## Technologies Used
 
