@@ -812,12 +812,6 @@ Includes:
 
 ---
 
-#### `test_ingest.py`
-
-Local ingestion testing script.
-
-Used for validating ingestion logic independently from the Airflow DAG.
-
 ## Technologies Used
 
 - Apache Airflow
