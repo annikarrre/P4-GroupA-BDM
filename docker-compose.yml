@@ -20,7 +20,6 @@ x-airflow-common: &airflow-common
   volumes:
     - ./dags:/opt/airflow/dags
     - ./src:/opt/airflow/project/src
-    - ./sql:/opt/airflow/project/sql
     - ./requirements.txt:/opt/airflow/project/requirements.txt
   depends_on:
     airflow-db:

@@ -14,6 +14,7 @@ from src.metrics import collect_metrics
 from src.runs import create_pipeline_run, finish_pipeline_run
 from src.slack import post_slack_message
 from src.metrics import collect_metrics, save_metric
+from src.db import get_conn
 import time
 import logging
 
@@ -85,12 +86,20 @@ def rico_multimodal_pipeline():
     @task
     def init_run():
         context = get_current_context()
-        limit = int(context["params"].get("LIMIT", 5))
 
-        run_info = create_pipeline_run(
-            dag_run_id=context["dag_run"].run_id,
+        limit = int(context["params"].get("LIMIT", 5))
+        dag_run_id = context["dag_run"].run_id
+
+        run_id = create_pipeline_run(
+            dag_run_id=dag_run_id,
             limit_param=limit,
         )
+
+        run_info = {
+            "run_id": str(run_id),
+            "limit": limit,
+            "dag_run_id": dag_run_id,
+        }
 
         post_slack_message(
             "RICO pipeline started\n"
@@ -182,7 +191,17 @@ def rico_multimodal_pipeline():
 
         metrics = collect_metrics(run_info["run_id"])
 
-        duration = metrics.get("total_run_duration_seconds", "unknown")
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT EXTRACT(EPOCH FROM (ended_at - started_at))
+                    FROM pipeline_runs
+                    WHERE run_id = %s
+                    """,
+                    (run_info["run_id"],),
+                )
+                duration = round(float(cur.fetchone()[0]), 3)
 
         post_slack_message(
             "RICO pipeline finished\n"

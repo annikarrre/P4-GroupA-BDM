@@ -1,14 +1,34 @@
 # RICO Multimodal Pipeline
 
-This project converts the original RICO lab notebook into a production-style Airflow pipeline. The pipeline ingests RICO screen data, stores raw files in MinIO, parses screen metadata, creates image and text embeddings, extracts structured metadata with a local LLM, loads results into Postgres/pgvector, runs a duplicate-detection audit, and records observability metrics for each run.
+This project converts the original RICO lab notebook into a production-style Airflow pipeline. The pipeline ingests RICO screen data, parses screen metadata, generates image and text embeddings, extracts structured metadata using a local LLM, stores processed outputs in Postgres/pgvector, runs duplicate-detection audits, evaluates embedding coverage, and records observability metrics for every pipeline run.
 
-The DAG is designed to be idempotent and traceable. Each pipeline run receives a unique `run_id`, and all destination rows include both `run_id` and `source_fingerprint` so rows can be traced back to the exact run and source input that produced them. The pipeline also stores run-level metrics in `pipeline_metrics`, audit results in `audit_results`, and sends Slack notifications for run start, audit failure, and run completion.
+The DAG is designed to be idempotent and traceable. Each pipeline run receives a unique `run_id`, and all destination rows include both `run_id` and `source_fingerprint` so rows can be traced back to the exact run and source input that produced them. The pipeline also stores run-level metrics in `pipeline_metrics`, audit results in `audit_results`, and sends Slack notifications for pipeline start, audit failure, and successful completion.
 
-The main DAG stages are:
+The Airflow DAG contains the following stages:
 
-ingest → parse → [embed_image, embed_text, extract] → load → audit → eval
+```text
+start
+  ↓
+init_run
+  ↓
+ingest_task
+  ↓
+parse_task
+  ↓
+embed_image_task ┐
+embed_text_task  ├─ run in parallel
+extract_task     ┘
+  ↓
+load_task
+  ↓
+audit_task
+  ↓
+eval_task
+  ↓
+finish_task
+```
 
-The middle three tasks run in parallel. The DAG supports a configurable LIMIT parameter so development can be done on a small number of screens, such as LIMIT=5, while larger runs can process more data.
+The embedding and extraction tasks run in parallel to improve pipeline throughput. The DAG also supports a configurable `LIMIT` parameter so development and testing can be performed on a small subset of screens, such as `LIMIT=5`, while larger runs can process more data.
 
 ## Infrastructure Setup
 
@@ -36,6 +56,12 @@ make down
 ```bash
 make clean
 make up
+```
+
+### Access Postgre
+
+```bash
+make db
 ```
 
 ### Airflow UI
@@ -105,6 +131,8 @@ SELECT COUNT(*) FROM screens_embeddings;
 SELECT COUNT(*) FROM screens_review_queue;
 ```
 
+![alt text](screenshots\image.png)
+
 The counts should remain stable after re-running the DAG.
 
 ## Traceability
@@ -126,8 +154,10 @@ This makes every row traceable to:
 SELECT run_id, status, limit_param
 FROM pipeline_runs
 ORDER BY started_at DESC
-LIMIT 5;
+LIMIT 2;
 ```
+
+![alt text](screenshots\image3.png)
 
 ```sql
 SELECT COUNT(*)
@@ -148,6 +178,8 @@ Both validation queries should return:
 ```text
 0
 ```
+
+![alt text](screenshots\image2.png)
 
 ## Observability Metrics
 
@@ -190,6 +222,8 @@ Example metrics:
 - `total_run_duration_seconds`
 - `final_run_status`
 
+![alt text](screenshots\image4.png)
+
 ## Audit Behavior
 
 The DAG includes a duplicate-detection audit stage.
@@ -229,6 +263,8 @@ SLACK_WEBHOOK_URL
 
 The webhook URL is stored in `.env` and is not committed to git.
 
+![alt text](screenshots\image5.png)
+
 ## Testing the Audit Failure Path
 
 The audit can be tested by intentionally inserting a duplicate embedding row.
@@ -237,6 +273,15 @@ The audit can be tested by intentionally inserting a duplicate embedding row.
 
 ```sql
 DROP INDEX IF EXISTS idx_screens_embeddings_unique;
+```
+
+Get run id.
+
+```sql
+SELECT run_id, COUNT(*)
+FROM screens_embeddings
+GROUP BY run_id
+ORDER BY COUNT(*) DESC;
 ```
 
 ### Step 2 — Insert a duplicate row
@@ -260,6 +305,7 @@ SELECT
     run_id,
     source_fingerprint || '_duplicate_test'
 FROM screens_embeddings
+WHERE run_id = '<RUN_ID>'
 LIMIT 1;
 ```
 
@@ -273,6 +319,7 @@ SELECT
     embedding_kind,
     COUNT(*)
 FROM screens_embeddings
+WHERE run_id = '<RUN_ID>'
 GROUP BY
     screen_id,
     model_name,
@@ -281,7 +328,13 @@ GROUP BY
 HAVING COUNT(*) > 1;
 ```
 
+![alt text](screenshots\image6.png)
+
 ### Step 4 — Run the audit
+
+```text
+docker compose exec airflow-scheduler python
+```
 
 ```python
 from src.audit import run_duplicate_audit
@@ -293,6 +346,14 @@ Expected result:
 - `AuditFailedError` is raised,
 - the pipeline run status becomes `paused-by-audit`,
 - audit details are written to `audit_results`.
+
+![alt text](screenshots\image7.png)
+
+![alt text](screenshots\image8.png)
+
+![alt text](screenshots\image9.png)
+
+![alt text](screenshots\image10.png)
 
 ### Step 5 — Cleanup
 
@@ -374,13 +435,26 @@ ORDER BY metric_name;
 ```
 
 ## Project Structure
-
 ```text
 .
 ├── dags/
 │   └── rico_pipeline_dag.py
+├── migrations/
+│   └── 001_schema.sql
+├── screenshots/
+│   ├── image.png
+│   ├── image2.png
+│   ├── image3.png
+│   ├── image4.png
+│   ├── image5.png
+│   ├── image6.png
+│   ├── image7.png
+│   ├── image8.png
+│   ├── image9.png
+│   └── image10.png
 ├── src/
 │   ├── audit.py
+│   ├── config.py
 │   ├── db.py
 │   ├── embed_image.py
 │   ├── embed_text.py
@@ -388,17 +462,17 @@ ORDER BY metric_name;
 │   ├── extract.py
 │   ├── ingest.py
 │   ├── metrics.py
+│   ├── parse.py
 │   ├── runs.py
 │   ├── slack.py
-│   └── timing.py
-├── sql/
-│   └── schema.sql
-├── migrations/
-│   └── 001_schema.sql
+│   ├── timing.py
+│   └── utils.py
+├── .gitignore
 ├── docker-compose.yml
-├── requirements.txt
 ├── Makefile
-└── README.md
+├── notebook.ipynb
+├── README.md
+├── requirements.txt
 ```
 
 ### Main Components
@@ -431,9 +505,6 @@ ORDER BY metric_name;
 - `slack.py`
   - Sends Slack notifications.
 
-- `sql/schema.sql`
-  - Main database schema definition.
-
 - `migrations/`
   - Automatically initializes PostgreSQL schema during container startup.
 
@@ -455,33 +526,6 @@ ORDER BY metric_name;
 - Audit failures act as a circuit breaker and stop downstream execution.
 - Metrics and audit results are persisted for historical analysis.
 
-## Future Improvements
-
-Possible future improvements for the pipeline include:
-
-- adding Prometheus/Grafana monitoring,
-- adding real retrieval evaluation datasets,
-- improving audit coverage with additional data-quality checks,
-- implementing retry-aware metrics,
-- adding Airflow task-level SLA monitoring,
-- separating staging and production database schemas,
-- adding automated integration tests,
-- adding partitioning strategies for large embedding tables.
-
-## Conclusion
-
-This project transforms the original notebook-based RICO pipeline into a production-style data engineering workflow using Airflow.
-
-The final pipeline supports:
-- orchestration,
-- idempotent processing,
-- row-level traceability,
-- duplicate-detection auditing,
-- observability metrics,
-- Slack notifications,
-- vector search storage with pgvector.
-
-The pipeline is designed to be reproducible, observable, and debuggable across multiple runs.
 
 ## Troubleshooting
 
