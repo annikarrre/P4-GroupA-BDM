@@ -131,7 +131,7 @@ SELECT COUNT(*) FROM screens_embeddings;
 SELECT COUNT(*) FROM screens_review_queue;
 ```
 
-![alt text](screenshots\image.png)
+![alt text](screenshots/image.png)
 
 The counts should remain stable after re-running the DAG.
 
@@ -157,7 +157,7 @@ ORDER BY started_at DESC
 LIMIT 2;
 ```
 
-![alt text](screenshots\image3.png)
+![alt text](screenshots/image3.png)
 
 ```sql
 SELECT COUNT(*)
@@ -179,7 +179,7 @@ Both validation queries should return:
 0
 ```
 
-![alt text](screenshots\image2.png)
+![alt text](screenshots/image2.png)
 
 ## Observability Metrics
 
@@ -222,7 +222,7 @@ Example metrics:
 - `total_run_duration_seconds`
 - `final_run_status`
 
-![alt text](screenshots\image4.png)
+![alt text](screenshots/image4.png)
 
 ## Audit Behavior
 
@@ -263,7 +263,7 @@ SLACK_WEBHOOK_URL
 
 The webhook URL is stored in `.env` and is not committed to git.
 
-![alt text](screenshots\image5.png)
+![alt text](screenshots/image5.png)
 
 ## Testing the Audit Failure Path
 
@@ -328,7 +328,7 @@ GROUP BY
 HAVING COUNT(*) > 1;
 ```
 
-![alt text](screenshots\image6.png)
+![alt text](screenshots/image6.png)
 
 ### Step 4 — Run the audit
 
@@ -347,13 +347,13 @@ Expected result:
 - the pipeline run status becomes `paused-by-audit`,
 - audit details are written to `audit_results`.
 
-![alt text](screenshots\image7.png)
+![alt text](screenshots/image7.png)
 
-![alt text](screenshots\image8.png)
+![alt text](screenshots/image8.png)
 
-![alt text](screenshots\image9.png)
+![alt text](screenshots/image9.png)
 
-![alt text](screenshots\image10.png)
+![alt text](screenshots/image10.png)
 
 ### Step 5 — Cleanup
 
