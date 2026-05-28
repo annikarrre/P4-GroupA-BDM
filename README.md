@@ -28,6 +28,8 @@ eval_task
 finish_task
 ```
 
+![alt text](screenshots/image11.png)
+
 The embedding and extraction tasks run in parallel to improve pipeline throughput. The DAG also supports a configurable `LIMIT` parameter so development and testing can be performed on a small subset of screens, such as `LIMIT=5`, while larger runs can process more data.
 
 ## Infrastructure Setup
@@ -38,6 +40,26 @@ The project uses Docker Compose to run the full stack:
 - MinIO
 - Ollama
 - Airflow
+
+## Local Python Environment Setup
+
+Create and activate a Python virtual environment before running the project locally.
+
+### Windows PowerShell
+
+```powershell
+python3.11 -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### Linux / macOS
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
 ### Start the environment
 
@@ -120,6 +142,10 @@ Run the DAG twice with the same configuration:
   "LIMIT": 5
 }
 ```
+
+Expected result in Airflow UI:
+
+![alt text](screenshots/image12.png)
 
 Then verify row counts:
 
@@ -248,23 +274,6 @@ ORDER BY created_at DESC
 LIMIT 5;
 ```
 
-## Slack Notifications
-
-Slack notifications are sent for:
-- pipeline start,
-- audit failure,
-- pipeline completion.
-
-The Slack webhook URL is configured through:
-
-```text
-SLACK_WEBHOOK_URL
-```
-
-The webhook URL is stored in `.env` and is not committed to git.
-
-![alt text](screenshots/image5.png)
-
 ## Testing the Audit Failure Path
 
 The audit can be tested by intentionally inserting a duplicate embedding row.
@@ -376,6 +385,23 @@ ON screens_embeddings (
 );
 ```
 
+## Slack Notifications
+
+Slack notifications are sent for:
+- pipeline start,
+- audit failure,
+- pipeline completion.
+
+The Slack webhook URL is configured through:
+
+```text
+SLACK_WEBHOOK_URL
+```
+
+The webhook URL is stored in `.env` and is not committed to git.
+
+![alt text](screenshots/image5.png)
+
 ## Example Verification Queries
 
 ### Latest pipeline runs
@@ -452,7 +478,9 @@ ORDER BY metric_name;
 │   ├── image7.png
 │   ├── image8.png
 │   ├── image9.png
-│   └── image10.png
+│   ├── image10.png
+│   ├── image11.png
+│   └── image12.png
 ├── src/
 │   ├── audit.py
 │   ├── config.py
@@ -473,8 +501,7 @@ ORDER BY metric_name;
 ├── Makefile
 ├── notebook.ipynb
 ├── README.md
-├── requirements.txt
-└── test_ingest.py
+└── requirements.txt
 ```
 
 ## File Descriptions
@@ -520,8 +547,6 @@ Creates all required database tables and indexes, including:
 - `pipeline_metrics`,
 - `audit_results`.
 
-Also initializes the `pgvector` extension.
-
 ---
 
 ### screenshots/
@@ -545,193 +570,87 @@ Contains the pipeline business logic and helper modules.
 
 #### `audit.py`
 
-Implements duplicate-detection audit checks.
+Runs duplicate-detection audit checks for the pipeline.
 
-Responsibilities:
-- validates uniqueness constraints,
-- detects duplicate embeddings,
-- stores audit results,
-- raises failures when duplicate rows are found.
+The module detects duplicate metadata and embedding rows, stores audit results, sends Slack failure notifications, and stops downstream execution if duplicates are found.
 
 ---
 
 #### `config.py`
 
-Stores shared configuration values and environment variable handling.
-
-Responsibilities:
-- model configuration,
-- service URLs,
-- environment settings,
-- reusable constants.
+Stores shared environment variables, model versions, and infrastructure configuration used across the pipeline.
 
 ---
 
 #### `db.py`
 
-Provides PostgreSQL database connection utilities.
-
-Responsibilities:
-- database connection management,
-- transaction handling,
-- reusable connection helpers.
+Provides a reusable PostgreSQL database connection helper used throughout the pipeline.
 
 ---
 
 #### `embed_image.py`
 
-Generates image embeddings.
-
-Responsibilities:
-- loads CLIP model,
-- creates image vector embeddings,
-- stores embedding metadata.
-
-Model used:
-
-```text
-open-clip-ViT-B-32-laion2b-s34b-b79k
-```
+Generates CLIP image embeddings from RICO screen images stored in MinIO and saves the vectors into the `screens_embeddings` table.
 
 ---
 
 #### `embed_text.py`
 
-Generates text embeddings.
-
-Responsibilities:
-- loads SentenceTransformer model,
-- creates text embeddings,
-- stores embedding metadata.
-
-Model used:
-
-```text
-sentence-transformers/all-MiniLM-L6-v2
-```
+Generates SBERT text embeddings from parsed RICO screen hierarchy data and stores the vectors in the `screens_embeddings` table.
 
 ---
 
 #### `eval.py`
 
-Implements evaluation and coverage metrics.
-
-Responsibilities:
-- validates paired embedding coverage,
-- computes evaluation metrics,
-- stores evaluation metrics into `pipeline_metrics`.
+Calculates evaluation metrics for the pipeline by validating image and text embedding coverage and storing the results in `pipeline_metrics`.
 
 ---
 
 #### `extract.py`
 
-Extracts structured metadata using a local LLM.
-
-Responsibilities:
-- calls the Ollama-hosted LLM,
-- extracts structured metadata,
-- calculates confidence scores,
-- prepares review queue routing.
-
-Model used:
-
-```text
-qwen2.5:3b
-```
+Uses a local Ollama LLM to extract structured metadata from parsed RICO screen hierarchy text and stores the results in `screens_metadata` and `screens_review_queue`.
 
 ---
 
 #### `ingest.py`
 
-Handles raw dataset ingestion.
-
-Responsibilities:
-- loads RICO input data,
-- uploads raw artifacts to MinIO,
-- generates deterministic object paths,
-- creates source fingerprints.
+Streams RICO dataset screens, uploads raw images and hierarchy files to MinIO, and stores screen metadata in the `screens_metadata` table using idempotent upserts.
 
 ---
 
 #### `metrics.py`
 
-Collects and stores observability metrics.
-
-Responsibilities:
-- task durations,
-- run durations,
-- embedding quality metrics,
-- metadata quality metrics,
-- evaluation metrics,
-- final pipeline status.
-
-Metrics are persisted in:
-
-```text
-pipeline_metrics
-```
+Collects pipeline observability and data-quality metrics and stores them in the `pipeline_metrics` table.
 
 ---
 
 #### `parse.py`
 
-Parses raw screen data into structured records.
-
-Responsibilities:
-- parses hierarchy metadata,
-- extracts structured fields,
-- prepares rows for embedding and extraction tasks.
+Parses RICO Android view hierarchy JSON files and converts visible UI elements into structured text representations for downstream embedding and extraction tasks.
 
 ---
 
 #### `runs.py`
 
-Manages pipeline lifecycle state.
-
-Responsibilities:
-- creates pipeline runs,
-- updates pipeline status,
-- stores run metadata,
-- finalizes completed runs.
-
-Data is persisted in:
-
-```text
-pipeline_runs
-```
+Manages pipeline run lifecycle tracking by creating and updating entries in the `pipeline_runs` table.
 
 ---
 
 #### `slack.py`
 
-Handles Slack notifications.
-
-Responsibilities:
-- pipeline start notifications,
-- audit failure notifications,
-- pipeline completion notifications.
+Sends Slack notifications for pipeline start, completion, and audit failure events using an incoming webhook.
 
 ---
 
 #### `timing.py`
 
-Provides reusable task timing decorators and duration tracking utilities.
-
-Responsibilities:
-- measuring task durations,
-- recording stage timings,
-- supporting observability metrics.
+Provides reusable timing decorators that measure task execution duration and store timing metrics in the `pipeline_metrics` table.
 
 ---
 
 #### `utils.py`
 
-Contains shared helper functions used across the project.
-
-Responsibilities:
-- reusable utility logic,
-- helper formatting functions,
-- shared pipeline helpers.
+Provides shared helper functions for hashing source data and retrieving the current git commit SHA for pipeline traceability.
 
 ---
 
@@ -740,11 +659,6 @@ Responsibilities:
 #### `.gitignore`
 
 Defines files and directories excluded from git tracking.
-
-Examples:
-- `.env`
-- `__pycache__/`
-- `.venv/`
 
 ---
 
@@ -799,15 +713,6 @@ Contains:
 
 Python dependency definitions for the project.
 
-Includes:
-- Airflow,
-- pgvector,
-- sentence-transformers,
-- open-clip,
-- psycopg2,
-- MinIO client libraries,
-- Ollama dependencies.
-
 ---
 
 ## Technologies Used
@@ -820,13 +725,6 @@ Includes:
 - OpenCLIP
 - SentenceTransformers
 - Docker Compose
-
-## Notes
-
-- The DAG is intentionally thin and delegates all logic to modules inside `src/`.
-- The pipeline uses PostgreSQL `ON CONFLICT` upserts for idempotency.
-- Audit failures act as a circuit breaker and stop downstream execution.
-- Metrics and audit results are persisted for historical analysis.
 
 
 ## Troubleshooting
